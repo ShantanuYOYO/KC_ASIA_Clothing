@@ -467,7 +467,7 @@ def render_gold_table(df, title, height=420):
 st.markdown("""
 <div class="report-title">
     🌏  Asia Clothing Sales Report
-    <div class="report-subtitle">Comprehensive Sales Analytics Dashboard · 2025</div>
+    <div class="report-subtitle">Comprehensive Sales Analytics Dashboard ·Apr 2026</div>
 </div>
 <hr>
 """, unsafe_allow_html=True)
@@ -820,7 +820,7 @@ if uploaded_file is not None:
                     text=website_data['QTY'].apply(lambda v: f"{v:,.0f}"),
                     marker=dict(color=bar_colors, line=dict(color='rgba(255,255,255,0.06)', width=1), cornerradius=6),
                 ))
-                fig_ws.update_layout(title="Sales by Marketplace")
+                fig_ws.update_layout(title="Sales by Marketplace till Apr 2026")
                 fig_ws = _dark_layout(fig_ws, "Marketplace", "Quantity Sold",
                                       extra_xaxis={'categoryorder': 'array',
                                                    'categoryarray': website_data['WEBSITE'].tolist()})
@@ -858,7 +858,7 @@ if uploaded_file is not None:
                     text=monthly_agg['QTY'].apply(lambda v: f"{v:,.0f}"),
                     marker=dict(color=bar_colors, line=dict(color='rgba(255,255,255,0.06)', width=1), cornerradius=5),
                 ))
-                fig_mo.update_layout(title="Sales by Month-Year")
+                fig_mo.update_layout(title="Sales by Month-Year till Apr 2026")
                 fig_mo = _dark_layout(
                     fig_mo, "Month-Year", "Quantity Sold",
                     extra_xaxis={'categoryorder': 'array', 'categoryarray': ordered_labels},
