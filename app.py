@@ -467,7 +467,7 @@ def render_gold_table(df, title, height=420):
 st.markdown("""
 <div class="report-title">
     🌏  Asia Clothing Sales Report
-    <div class="report-subtitle">Comprehensive Sales Analytics Dashboard ·Apr 2026</div>
+    <div class="report-subtitle">Comprehensive Sales Analytics Dashboard · Apr 2026</div>
 </div>
 <hr>
 """, unsafe_allow_html=True)
@@ -662,7 +662,7 @@ if uploaded_file is not None:
             selected_websites    = st.multiselect("Website",    ['All'] + websites,    default='All')
             selected_month_years = st.multiselect("Month-Year", ['All'] + month_years, default='All')
 
-            # Apply Sheet A filters
+            # Apply Sheet A filters -> get valid COLABs from Sheet A attributes
             filtered_colabs = sheet_a_unique.copy()
             if 'All' not in selected_seasons       and selected_seasons:
                 filtered_colabs = filtered_colabs[filtered_colabs['SEASON'].isin(selected_seasons)]
@@ -675,23 +675,24 @@ if uploaded_file is not None:
 
             valid_colabs = set(filtered_colabs['COLAB'].unique())
 
-            # Apply Sheet B filters
+            # Apply Sheet B filters (starting from only those COLABs that passed Sheet A filters)
             filtered_b = sheet_b_raw[sheet_b_raw['COLAB'].isin(valid_colabs)].copy()
             if 'All' not in selected_websites    and selected_websites:
                 filtered_b = filtered_b[filtered_b['WEBSITE'].isin(selected_websites)]
             if 'All' not in selected_month_years and selected_month_years:
                 filtered_b = filtered_b[filtered_b['MONTH_YEAR'].isin(selected_month_years)]
 
-            filtered_df = merged_df[merged_df['COLAB'].isin(valid_colabs)].copy()
-            if 'All' not in selected_websites and selected_websites:
-                filtered_df = filtered_df[filtered_df['WEBSITE'].isin(selected_websites)]
+            # For consistency, we'll later restrict Sheet A data to COLABs that actually appear in filtered_b
+            # (i.e. the final set of COLABs after all filters)
+            final_colabs = set(filtered_b['COLAB'].unique())
 
+            # Sidebar dataset stats (based on the fully filtered intersection)
             st.markdown("---")
             st.markdown("### DATASET")
             st.markdown(f"""
-<div class="stat-pill"><span>COLABs</span><span>{len(valid_colabs):,}</span></div>
-<div class="stat-pill"><span>Seasons</span><span>{filtered_colabs['SEASON'].nunique()}</span></div>
-<div class="stat-pill"><span>Subcategories</span><span>{filtered_colabs['SUBCATEGORY'].nunique()}</span></div>
+<div class="stat-pill"><span>COLABs</span><span>{len(final_colabs):,}</span></div>
+<div class="stat-pill"><span>Seasons</span><span>{filtered_colabs[filtered_colabs['COLAB'].isin(final_colabs)]['SEASON'].nunique()}</span></div>
+<div class="stat-pill"><span>Subcategories</span><span>{filtered_colabs[filtered_colabs['COLAB'].isin(final_colabs)]['SUBCATEGORY'].nunique()}</span></div>
 <div class="stat-pill"><span>Websites</span><span>{filtered_b['WEBSITE'].nunique()}</span></div>
 <div class="stat-pill"><span>Months</span><span>{filtered_b['MONTH_YEAR'].nunique()}</span></div>
 """, unsafe_allow_html=True)
@@ -704,17 +705,24 @@ if uploaded_file is not None:
                 unsafe_allow_html=True
             )
 
-        if len(filtered_df) == 0:
+        if len(final_colabs) == 0:
             st.warning("⚠️ No data available for the selected filters.")
         else:
             # ── KPI row ────────────────────────────────────────────────────────
             st.markdown('<div class="section-heading">◈  Key Performance Indicators</div>', unsafe_allow_html=True)
 
-            filtered_sheet_a = sheet_a_unique[sheet_a_unique['COLAB'].isin(valid_colabs)]
+            # Restrict Sheet A data to the exact COLABs that survived all filters
+            filtered_sheet_a = sheet_a_unique[sheet_a_unique['COLAB'].isin(final_colabs)]
+
+            # Static inventory metrics from Sheet A
             f_init    = filtered_sheet_a['INITIAL_QTY'].sum()
-            f_sold    = filtered_sheet_a['TOTAL_QTY'].sum()
             f_bal     = filtered_sheet_a['BALANCE'].sum()
             f_damaged = filtered_sheet_a['DAMAGED_QTY'].sum()
+
+            # "Total Qty Sold" now comes from the actual orders (Sheet B), so it reflects Website/Month-Year filters
+            f_sold    = filtered_b['QTY'].sum()
+
+            # Sales % based on orders vs initial stock
             f_spct    = (f_sold / f_init * 100) if f_init > 0 else 0
 
             col1, col2, col3, col4, col5, col6 = st.columns(6)
