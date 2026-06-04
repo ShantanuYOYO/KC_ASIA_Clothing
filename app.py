@@ -503,7 +503,7 @@ def parse_asia_date(val):
         return pd.NaT
 
 
-# ── Data loader (no merged_df – only stock & raw orders) ──────────────────────
+# ── Data loader (aggregate Sheet A by COLAB to preserve correct totals) ────
 @st.cache_data(ttl=3600)
 def load_and_process_data(uploaded_file):
     try:
@@ -557,7 +557,15 @@ def load_and_process_data(uploaded_file):
             'BALANCE':     pd.to_numeric(sheet_a[balance_col],     errors='coerce').fillna(0),
             'DAMAGED_QTY': pd.to_numeric(sheet_a[damaged_col],     errors='coerce').fillna(0),
         })
-        sheet_a_unique = sheet_a_clean.drop_duplicates(subset=['COLAB'], keep='first')
+
+        # ✅ Aggregate by COLAB – sum quantities, keep first categorical
+        agg_dict = {
+            'SEASON': 'first', 'SUBCATEGORY': 'first',
+            'STYLE_NAMES': 'first', 'STYLE_NO': 'first', 'COLOR': 'first',
+            'INITIAL_QTY': 'sum', 'TOTAL_QTY': 'sum',
+            'BALANCE': 'sum', 'DAMAGED_QTY': 'sum'
+        }
+        sheet_a_unique = sheet_a_clean.groupby('COLAB', as_index=False).agg(agg_dict)
 
         # Sheet B
         website_col    = find_column(sheet_b, ['WEBSITE', 'Website'])
@@ -587,7 +595,6 @@ def load_and_process_data(uploaded_file):
         sheet_b_raw['YEAR_NUM']   = sheet_b_raw['ORDER_DATE'].dt.year
         sheet_b_raw['MONTH_YEAR'] = sheet_b_raw['ORDER_DATE'].dt.strftime('%b-%y')
 
-        # No merged_df – return clean stock and raw orders
         return sheet_a_unique, sheet_b_raw
 
     except Exception as e:
@@ -645,43 +652,46 @@ if uploaded_file is not None:
             selected_websites    = st.multiselect("Website",    ['All'] + websites,    default='All')
             selected_month_years = st.multiselect("Month-Year", ['All'] + month_years, default='All')
 
-            # ── Cross‑filter logic: intersection of A and B COLABs ──────────
-            # 1. COLABs passing all Sheet A filters
+            # ── Filter logic ──────────────────────────────────────────────────
             filtered_a = sheet_a_unique.copy()
-            if 'All' not in selected_seasons       and selected_seasons:
+            if 'All' not in selected_seasons and selected_seasons:
                 filtered_a = filtered_a[filtered_a['SEASON'].isin(selected_seasons)]
             if 'All' not in selected_subcategories and selected_subcategories:
                 filtered_a = filtered_a[filtered_a['SUBCATEGORY'].isin(selected_subcategories)]
-            if 'All' not in selected_colors        and selected_colors:
+            if 'All' not in selected_colors and selected_colors:
                 filtered_a = filtered_a[filtered_a['COLOR'].isin(selected_colors)]
-            if 'All' not in selected_colabs        and selected_colabs:
+            if 'All' not in selected_colabs and selected_colabs:
                 filtered_a = filtered_a[filtered_a['COLAB'].isin(selected_colabs)]
 
             valid_a_colabs = set(filtered_a['COLAB'].unique())
 
-            # 2. COLABs that appear in Sheet B after Website & Month‑Year filters
-            temp_b = sheet_b_raw[sheet_b_raw['COLAB'].isin(valid_a_colabs)].copy()
-            if 'All' not in selected_websites and selected_websites:
-                temp_b = temp_b[temp_b['WEBSITE'].isin(selected_websites)]
-            if 'All' not in selected_month_years and selected_month_years:
-                temp_b = temp_b[temp_b['MONTH_YEAR'].isin(selected_month_years)]
+            # B filter active?
+            b_filter_active = (
+                ('All' not in selected_websites and selected_websites) or
+                ('All' not in selected_month_years and selected_month_years)
+            )
 
-            valid_b_colabs = set(temp_b['COLAB'].unique())
+            if b_filter_active:
+                temp_b = sheet_b_raw[sheet_b_raw['COLAB'].isin(valid_a_colabs)].copy()
+                if 'All' not in selected_websites and selected_websites:
+                    temp_b = temp_b[temp_b['WEBSITE'].isin(selected_websites)]
+                if 'All' not in selected_month_years and selected_month_years:
+                    temp_b = temp_b[temp_b['MONTH_YEAR'].isin(selected_month_years)]
+                valid_b_colabs = set(temp_b['COLAB'].unique())
+                valid_colabs = valid_a_colabs.intersection(valid_b_colabs)
+            else:
+                valid_colabs = valid_a_colabs.copy()
 
-            # Intersection = visible COLABs
-            valid_colabs = valid_a_colabs.intersection(valid_b_colabs)
-
-            # 3. Final filtered datasets for KPIs, tables, charts
+            # Build final datasets
             filtered_sheet_a = sheet_a_unique[sheet_a_unique['COLAB'].isin(valid_colabs)].copy()
 
-            # Final orders – all B filters applied (Website, Month‑Year)
             filtered_b_final = sheet_b_raw[sheet_b_raw['COLAB'].isin(valid_colabs)].copy()
             if 'All' not in selected_websites and selected_websites:
                 filtered_b_final = filtered_b_final[filtered_b_final['WEBSITE'].isin(selected_websites)]
             if 'All' not in selected_month_years and selected_month_years:
                 filtered_b_final = filtered_b_final[filtered_b_final['MONTH_YEAR'].isin(selected_month_years)]
 
-            # ── Sidebar DATASET pills (cross‑filter aware) ──────────────────
+            # Sidebar DATASET pills
             st.markdown("---")
             st.markdown("### DATASET")
             st.markdown(f"""
@@ -700,18 +710,22 @@ if uploaded_file is not None:
                 unsafe_allow_html=True
             )
 
-        # ── Guard clause ─────────────────────────────────────────────────────
+        # ── Guard ─────────────────────────────────────────────────────────────
         if len(valid_colabs) == 0:
             st.warning("⚠️ No COLABs match the selected filters. Please adjust your selections.")
             st.stop()
 
-        # ── KPIs (stock from A, orders from B) ──────────────────────────────
+        # ── KPIs (use Sheet A's TOTAL_QTY when no B filter) ──────────────────
         st.markdown('<div class="section-heading">◈  Key Performance Indicators</div>', unsafe_allow_html=True)
 
         f_init    = filtered_sheet_a['INITIAL_QTY'].sum()
         f_bal     = filtered_sheet_a['BALANCE'].sum()
         f_damaged = filtered_sheet_a['DAMAGED_QTY'].sum()
-        total_qty_sold = filtered_b_final['QTY'].sum()               # from orders
+
+        if b_filter_active:
+            total_qty_sold = filtered_b_final['QTY'].sum()
+        else:
+            total_qty_sold = filtered_sheet_a['TOTAL_QTY'].sum()
 
         f_spct = (total_qty_sold / f_init * 100) if f_init > 0 else 0
 
@@ -735,28 +749,28 @@ if uploaded_file is not None:
 
         st.markdown("<hr>", unsafe_allow_html=True)
 
-        # ── Distribution tables (cross‑filter left join on COLAB) ──────────
+        # ── Distribution tables ─────────────────────────────────────────────
         st.markdown('<div class="section-heading">◈  Sales Distribution Tables</div>', unsafe_allow_html=True)
 
-        # Aggregate orders per COLAB
-        orders_agg = filtered_b_final.groupby('COLAB')['QTY'].sum().reset_index()
-        orders_agg.rename(columns={'QTY': 'TOTAL_QTY'}, inplace=True)
-
-        # Merge stock (A) with orders (B) – inner join guarantees only valid COLABs
-        merged_for_tables = pd.merge(
-            filtered_sheet_a[['COLAB', 'SEASON', 'SUBCATEGORY', 'COLOR',
-                              'INITIAL_QTY', 'BALANCE', 'DAMAGED_QTY']],
-            orders_agg,
-            on='COLAB',
-            how='inner'
-        )
+        if b_filter_active:
+            orders_agg = filtered_b_final.groupby('COLAB')['QTY'].sum().reset_index()
+            orders_agg.rename(columns={'QTY': 'TOTAL_QTY'}, inplace=True)
+            merged_for_tables = pd.merge(
+                filtered_sheet_a[['COLAB', 'SEASON', 'SUBCATEGORY', 'COLOR',
+                                  'INITIAL_QTY', 'BALANCE', 'DAMAGED_QTY']],
+                orders_agg, on='COLAB', how='inner'
+            )
+        else:
+            merged_for_tables = filtered_sheet_a[['COLAB', 'SEASON', 'SUBCATEGORY', 'COLOR',
+                                                   'INITIAL_QTY', 'BALANCE', 'DAMAGED_QTY']].copy()
+            merged_for_tables['TOTAL_QTY'] = filtered_sheet_a['TOTAL_QTY']
 
         def analyze_group_crossfilter(group_col, display_name):
             if group_col not in merged_for_tables.columns:
                 return pd.DataFrame()
             grouped = merged_for_tables.groupby(group_col, observed=True).agg(
                 INITIAL_QTY=('INITIAL_QTY', 'sum'),
-                TOTAL_QTY=('TOTAL_QTY', 'sum'),       # order-based
+                TOTAL_QTY=('TOTAL_QTY', 'sum'),
                 BALANCE=('BALANCE', 'sum'),
                 DAMAGED_QTY=('DAMAGED_QTY', 'sum')
             ).reset_index()
@@ -775,7 +789,6 @@ if uploaded_file is not None:
                 sort_map[sort_column], ascending=(sort_order == 'Ascending')
             )
 
-            # Build display‑ready DataFrame
             display = pd.DataFrame()
             display[display_name]      = grouped[group_col].astype(str)
             display['Initial Qty']     = grouped['INITIAL_QTY'].apply(lambda v: f"{int(v):,}")
@@ -811,7 +824,7 @@ if uploaded_file is not None:
 
         st.markdown("<hr>", unsafe_allow_html=True)
 
-        # ── Visual Analytics (charts from filtered_b_final) ─────────────────
+        # ── Visual Analytics (always from orders) ────────────────────────────
         st.markdown('<div class="section-heading">◈  Visual Analytics</div>', unsafe_allow_html=True)
 
         # Marketplace chart
@@ -884,7 +897,7 @@ if uploaded_file is not None:
             st.info("No order date data for the selected filters")
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # Raw data expander
+        # Raw data
         with st.expander("🔍 View Filtered Order Data"):
             st.dataframe(filtered_b_final, use_container_width=True)
 
