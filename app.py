@@ -662,7 +662,7 @@ if uploaded_file is not None:
             selected_websites    = st.multiselect("Website",    ['All'] + websites,    default='All')
             selected_month_years = st.multiselect("Month-Year", ['All'] + month_years, default='All')
 
-            # Apply Sheet A filters -> get valid COLABs from Sheet A attributes
+            # ── Filter Sheet A → determine valid COLABs ──
             filtered_colabs = sheet_a_unique.copy()
             if 'All' not in selected_seasons       and selected_seasons:
                 filtered_colabs = filtered_colabs[filtered_colabs['SEASON'].isin(selected_seasons)]
@@ -673,26 +673,22 @@ if uploaded_file is not None:
             if 'All' not in selected_colabs        and selected_colabs:
                 filtered_colabs = filtered_colabs[filtered_colabs['COLAB'].isin(selected_colabs)]
 
-            valid_colabs = set(filtered_colabs['COLAB'].unique())
+            valid_colabs = set(filtered_colabs['COLAB'].unique())   # stock side
 
-            # Apply Sheet B filters (starting from only those COLABs that passed Sheet A filters)
+            # ── Filter Sheet B for charts / Total Qty Sold ──
             filtered_b = sheet_b_raw[sheet_b_raw['COLAB'].isin(valid_colabs)].copy()
-            if 'All' not in selected_websites    and selected_websites:
+            if 'All' not in selected_websites and selected_websites:
                 filtered_b = filtered_b[filtered_b['WEBSITE'].isin(selected_websites)]
             if 'All' not in selected_month_years and selected_month_years:
                 filtered_b = filtered_b[filtered_b['MONTH_YEAR'].isin(selected_month_years)]
 
-            # For consistency, we'll later restrict Sheet A data to COLABs that actually appear in filtered_b
-            # (i.e. the final set of COLABs after all filters)
-            final_colabs = set(filtered_b['COLAB'].unique())
-
-            # Sidebar dataset stats (based on the fully filtered intersection)
+            # Sidebar dataset stats
             st.markdown("---")
             st.markdown("### DATASET")
             st.markdown(f"""
-<div class="stat-pill"><span>COLABs</span><span>{len(final_colabs):,}</span></div>
-<div class="stat-pill"><span>Seasons</span><span>{filtered_colabs[filtered_colabs['COLAB'].isin(final_colabs)]['SEASON'].nunique()}</span></div>
-<div class="stat-pill"><span>Subcategories</span><span>{filtered_colabs[filtered_colabs['COLAB'].isin(final_colabs)]['SUBCATEGORY'].nunique()}</span></div>
+<div class="stat-pill"><span>COLABs</span><span>{len(valid_colabs):,}</span></div>
+<div class="stat-pill"><span>Seasons</span><span>{filtered_colabs['SEASON'].nunique()}</span></div>
+<div class="stat-pill"><span>Subcategories</span><span>{filtered_colabs['SUBCATEGORY'].nunique()}</span></div>
 <div class="stat-pill"><span>Websites</span><span>{filtered_b['WEBSITE'].nunique()}</span></div>
 <div class="stat-pill"><span>Months</span><span>{filtered_b['MONTH_YEAR'].nunique()}</span></div>
 """, unsafe_allow_html=True)
@@ -705,24 +701,18 @@ if uploaded_file is not None:
                 unsafe_allow_html=True
             )
 
-        if len(final_colabs) == 0:
-            st.warning("⚠️ No data available for the selected filters.")
+        # ── Guard: at least some COLABs must pass Sheet A filters ──
+        if len(valid_colabs) == 0:
+            st.warning("⚠️ No COLABs match the selected Season / Subcategory / Color / Colab filters.")
         else:
-            # ── KPI row ────────────────────────────────────────────────────────
+            # ── KPI row (stock always visible) ─────────────────────────────────
             st.markdown('<div class="section-heading">◈  Key Performance Indicators</div>', unsafe_allow_html=True)
 
-            # Restrict Sheet A data to the exact COLABs that survived all filters
-            filtered_sheet_a = sheet_a_unique[sheet_a_unique['COLAB'].isin(final_colabs)]
-
-            # Static inventory metrics from Sheet A
+            filtered_sheet_a = sheet_a_unique[sheet_a_unique['COLAB'].isin(valid_colabs)]
             f_init    = filtered_sheet_a['INITIAL_QTY'].sum()
             f_bal     = filtered_sheet_a['BALANCE'].sum()
             f_damaged = filtered_sheet_a['DAMAGED_QTY'].sum()
-
-            # "Total Qty Sold" now comes from the actual orders (Sheet B), so it reflects Website/Month-Year filters
-            f_sold    = filtered_b['QTY'].sum()
-
-            # Sales % based on orders vs initial stock
+            f_sold    = filtered_b['QTY'].sum() if not filtered_b.empty else 0
             f_spct    = (f_sold / f_init * 100) if f_init > 0 else 0
 
             col1, col2, col3, col4, col5, col6 = st.columns(6)
@@ -745,7 +735,7 @@ if uploaded_file is not None:
 
             st.markdown("<hr>", unsafe_allow_html=True)
 
-            # ── Distribution tables (no Brand, no Category) ────────────────────
+            # ── Distribution tables (based on stock, ignore Website/Month filters) ──
             st.markdown('<div class="section-heading">◈  Sales Distribution Tables</div>', unsafe_allow_html=True)
 
             def analyze_group(group_col, display_name):
@@ -804,7 +794,7 @@ if uploaded_file is not None:
 
             st.markdown("<hr>", unsafe_allow_html=True)
 
-            # ── Visual Analytics (Marketplace and Month-Year only) ────────────
+            # ── Visual Analytics (charts from orders only) ─────────────────────
             st.markdown('<div class="section-heading">◈  Visual Analytics</div>', unsafe_allow_html=True)
 
             # Marketplace chart
@@ -834,7 +824,7 @@ if uploaded_file is not None:
                                                    'categoryarray': website_data['WEBSITE'].tolist()})
                 st.plotly_chart(fig_ws, use_container_width=True)
             else:
-                st.info("No marketplace data available")
+                st.info("No marketplace order data for the selected filters")
             st.markdown("</div>", unsafe_allow_html=True)
 
             # Month-Year chart
@@ -874,7 +864,7 @@ if uploaded_file is not None:
                 )
                 st.plotly_chart(fig_mo, use_container_width=True)
             else:
-                st.info("No order date data available")
+                st.info("No order date data for the selected filters")
             st.markdown("</div>", unsafe_allow_html=True)
 
             # Raw data expander
