@@ -630,7 +630,7 @@ if uploaded_file is not None:
             st.markdown("### SORT TABLES")
             sort_column = st.selectbox(
                 "Sort by",
-                ['Total Qty', 'Initial Qty', 'Balance', 'Damaged Qty', 'Sales%'],
+                ['Total Qty Sold', 'Initial Qty', 'Balance', 'Damaged Qty', 'Sales%'],
                 key='sort_measure'
             )
             sort_order = st.radio("Order", ['Descending', 'Ascending'], horizontal=True)
@@ -754,7 +754,7 @@ if uploaded_file is not None:
                     (grouped['TOTAL_QTY'] / grouped['INITIAL_QTY']) * 100, 0
                 )
                 sort_map = {
-                    'Total Qty':   'TOTAL_QTY',
+                    'Total Qty Sold':   'TOTAL_QTY',
                     'Initial Qty': 'INITIAL_QTY',
                     'Balance':     'BALANCE',
                     'Damaged Qty': 'DAMAGED_QTY',
@@ -764,7 +764,7 @@ if uploaded_file is not None:
                 display = pd.DataFrame()
                 display[display_name]   = grouped[group_col].astype(str)
                 display['Initial Qty']  = grouped['INITIAL_QTY'].apply(lambda v: f"{int(v):,}")
-                display['Total Qty']    = grouped['TOTAL_QTY'].apply(lambda v: f"{int(v):,}")
+                display['Total Qty Sold']    = grouped['TOTAL_QTY'].apply(lambda v: f"{int(v):,}")
                 display['Balance Qty']  = grouped['BALANCE'].apply(lambda v: f"{int(v):,}")
                 display['Damaged Qty']  = grouped['DAMAGED_QTY'].apply(lambda v: f"{int(v):,}")
                 display['Sales %']      = grouped['SALES_PERCENTAGE'].apply(lambda v: f"{v:.1f}%")
